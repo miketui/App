@@ -5,6 +5,8 @@ import FeedPage from './FeedPage';
 import DocsPage from './DocsPage';
 import ChatPage from './ChatPage';
 import DashboardPage from './DashboardPage';
+import ApplyPage from './ApplyPage';
+import ProfilePage from './ProfilePage';
 import { AuthProvider, useAuth } from './AuthContext';
 
 function PrivateRoute({ children, roles }) {
@@ -44,6 +46,14 @@ function App() {
             element={
               <PrivateRoute roles={['Admin']}> <DashboardPage /> </PrivateRoute>
             }
+          />
+          <Route
+            path="/apply"
+            element={<PrivateRoute roles={['Applicant']}> <ApplyPage /> </PrivateRoute>}
+          />
+          <Route
+            path="/profile"
+            element={<PrivateRoute roles={['Applicant','Member','Admin']}> <ProfilePage /> </PrivateRoute>}
           />
         </Routes>
       </Router>
