@@ -9,7 +9,8 @@ import {
   User, 
   LogOut,
   Menu,
-  X
+  X,
+  CreditCard
 } from 'lucide-react';
 
 const Navigation = () => {
@@ -34,6 +35,12 @@ const Navigation = () => {
       path: '/chat', 
       label: 'Chat', 
       icon: MessageCircle,
+      roles: ['Member', 'Leader', 'Admin']
+    },
+    { 
+      path: '/billing', 
+      label: 'Billing', 
+      icon: CreditCard,
       roles: ['Member', 'Leader', 'Admin']
     },
     { 

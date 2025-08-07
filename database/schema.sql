@@ -359,6 +359,40 @@ CREATE TRIGGER post_comments_count_trigger
   AFTER INSERT OR DELETE ON comments
   FOR EACH ROW EXECUTE FUNCTION update_post_comments_count();
 
+-- Plagiarism checks table
+CREATE TABLE plagiarism_checks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scan_id TEXT UNIQUE NOT NULL,
+  document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  results JSONB,
+  similarity_score DECIMAL(5,2),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add indexes for plagiarism_checks
+CREATE INDEX idx_plagiarism_checks_scan_id ON plagiarism_checks(scan_id);
+CREATE INDEX idx_plagiarism_checks_document_id ON plagiarism_checks(document_id);
+CREATE INDEX idx_plagiarism_checks_user_id ON plagiarism_checks(user_id);
+CREATE INDEX idx_plagiarism_checks_created_at ON plagiarism_checks(created_at);
+
+-- Enable RLS for plagiarism_checks
+ALTER TABLE plagiarism_checks ENABLE ROW LEVEL SECURITY;
+
+-- RLS policies for plagiarism_checks
+CREATE POLICY "Admins and Leaders can view all plagiarism checks" ON plagiarism_checks
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role IN ('Admin', 'Leader'))
+  );
+
+CREATE POLICY "System can insert plagiarism checks" ON plagiarism_checks
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "System can update plagiarism checks" ON plagiarism_checks
+  FOR UPDATE USING (true);
+
 -- Insert default houses
 INSERT INTO houses (name, category, description) VALUES
 ('House of Eleganza', 'Ballroom', 'Celebrating grace, poise, and sophisticated performance'),

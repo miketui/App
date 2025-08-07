@@ -9,6 +9,7 @@ import FeedPage from './pages/FeedPage';
 import DocsPage from './pages/DocsPage';
 import ChatPage from './pages/ChatPage';
 import DashboardPage from './pages/DashboardPage';
+import BillingPage from './pages/BillingPage';
 
 // Components
 import LoadingSpinner from './components/LoadingSpinner';
@@ -108,6 +109,14 @@ function AppRoutes() {
         element={
           <PrivateRoute roles={['Admin']}>
             <DashboardPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/billing"
+        element={
+          <PrivateRoute roles={['Member', 'Leader', 'Admin']}>
+            <BillingPage />
           </PrivateRoute>
         }
       />

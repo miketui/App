@@ -11,7 +11,10 @@ import {
   MoreVertical,
   Filter,
   Users,
-  Globe
+  Globe,
+  Sparkles,
+  Hash,
+  Wand2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -32,6 +35,9 @@ const FeedPage = () => {
   const [commentInputs, setCommentInputs] = useState({});
   const [showComments, setShowComments] = useState({});
   const [comments, setComments] = useState({});
+  const [generatingCaption, setGeneratingCaption] = useState(false);
+  const [generatingHashtags, setGeneratingHashtags] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
   
   const fileInputRef = useRef(null);
 
@@ -239,6 +245,97 @@ const FeedPage = () => {
   // Remove selected file
   const removeFile = (index) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Generate AI caption
+  const generateAICaption = async () => {
+    if (!newPost.content.trim() && selectedFiles.length === 0) {
+      toast.error('Please add some content or media first');
+      return;
+    }
+
+    setGeneratingCaption(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch('/api/ai/generate-caption', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content: newPost.content || 'Sharing some amazing content!',
+          mediaType: selectedFiles.length > 0 ? 'image' : 'text'
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to generate caption');
+      }
+
+      const data = await response.json();
+      
+      if (data.caption) {
+        setNewPost(prev => ({ ...prev, content: data.caption }));
+        setAiSuggestions(data.suggestions || []);
+        toast.success('AI caption generated! ✨');
+      } else if (data.fallback) {
+        setNewPost(prev => ({ ...prev, content: data.fallback }));
+        toast.success('Fallback caption applied!');
+      }
+    } catch (error) {
+      console.error('Error generating caption:', error);
+      toast.error(error.message || 'Failed to generate AI caption');
+    } finally {
+      setGeneratingCaption(false);
+    }
+  };
+
+  // Generate hashtag suggestions
+  const generateHashtags = async () => {
+    if (!newPost.content.trim()) {
+      toast.error('Please add some content first');
+      return;
+    }
+
+    setGeneratingHashtags(true);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch('/api/ai/generate-hashtags', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          content: newPost.content,
+          count: 5
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to generate hashtags');
+      }
+
+      const data = await response.json();
+      
+      const hashtags = data.hashtags || data.fallback || [];
+      if (hashtags.length > 0) {
+        const hashtagString = hashtags.join(' ');
+        setNewPost(prev => ({ 
+          ...prev, 
+          content: prev.content + '\n\n' + hashtagString 
+        }));
+        toast.success(`Added ${hashtags.length} hashtags! #️⃣`);
+      }
+    } catch (error) {
+      console.error('Error generating hashtags:', error);
+      toast.error(error.message || 'Failed to generate hashtags');
+    } finally {
+      setGeneratingHashtags(false);
+    }
   };
 
   // Toggle comments visibility
@@ -621,6 +718,48 @@ const FeedPage = () => {
                   </div>
                 )}
 
+                {/* AI Features */}
+                <div className="flex items-center justify-between mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                  <span className="text-sm font-medium text-purple-700">✨ AI-Powered Features</span>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={generateAICaption}
+                      disabled={generatingCaption}
+                      className="flex items-center space-x-1 px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                    >
+                      {generatingCaption ? (
+                        <>
+                          <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          <span>AI Caption</span>
+                        </>
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={generateHashtags}
+                      disabled={generatingHashtags || !newPost.content.trim()}
+                      className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {generatingHashtags ? (
+                        <>
+                          <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Adding...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Hash size={14} />
+                          <span>Hashtags</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Post Options */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
@@ -637,6 +776,7 @@ const FeedPage = () => {
                       onClick={() => fileInputRef.current?.click()}
                       className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                       disabled={selectedFiles.length >= 5}
+                      title="Add images (max 5)"
                     >
                       <ImageIcon size={20} />
                     </button>

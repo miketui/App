@@ -8,6 +8,7 @@ const Redis = require('redis');
 const Stripe = require('stripe');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
+const aiService = require('./services/aiService');
 
 // Environment variables
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
@@ -985,6 +986,604 @@ app.post('/api/posts/:postId/comments', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Comment creation error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== AI-POWERED FEATURES ====================
+
+// Generate AI caption for posts
+app.post('/api/ai/generate-caption', authenticate, async (req, res) => {
+  try {
+    const { content, mediaType = 'text' } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.generatePostCaption(content, mediaType, req.userProfile);
+    
+    if (!result.success) {
+      return res.status(500).json({ 
+        error: result.error,
+        fallback: result.fallback 
+      });
+    }
+
+    res.json({
+      caption: result.caption,
+      suggestions: result.suggestions
+    });
+  } catch (error) {
+    console.error('AI caption generation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Generate hashtag suggestions
+app.post('/api/ai/generate-hashtags', authenticate, async (req, res) => {
+  try {
+    const { content, count = 5 } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.generateHashtags(content, count);
+    
+    if (!result.success) {
+      return res.status(500).json({ 
+        error: result.error,
+        fallback: result.fallback || ['#ballroom', '#voguing', '#community', '#performance', '#hausofbasquiat']
+      });
+    }
+
+    res.json({ hashtags: result.hashtags });
+  } catch (error) {
+    console.error('AI hashtag generation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Content moderation
+app.post('/api/ai/moderate-content', authenticate, authorize(['Admin', 'Leader']), async (req, res) => {
+  try {
+    const { content, type = 'text' } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.moderateContent(content, type);
+    
+    if (!result.success) {
+      return res.status(500).json({ 
+        error: result.error,
+        action: result.action || 'manual_review'
+      });
+    }
+
+    res.json({
+      flagged: result.flagged,
+      categories: result.categories,
+      categoryScores: result.categoryScores,
+      action: result.action
+    });
+  } catch (error) {
+    console.error('Content moderation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Content summarization
+app.post('/api/ai/summarize', authenticate, async (req, res) => {
+  try {
+    const { content, maxLength = 200 } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.summarizeContent(content, maxLength);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    res.json({
+      summary: result.summary,
+      originalLength: result.originalLength,
+      summaryLength: result.summaryLength
+    });
+  } catch (error) {
+    console.error('Content summarization error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Sentiment analysis
+app.post('/api/ai/analyze-sentiment', authenticate, authorize(['Admin', 'Leader']), async (req, res) => {
+  try {
+    const { content } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.analyzeSentiment(content);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    res.json({
+      sentiment: result.sentiment,
+      confidence: result.confidence,
+      emotions: result.emotions,
+      tone: result.tone
+    });
+  } catch (error) {
+    console.error('Sentiment analysis error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Plagiarism check
+app.post('/api/ai/check-plagiarism', authenticate, authorize(['Admin', 'Leader']), async (req, res) => {
+  try {
+    const { content, documentId } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await aiService.checkPlagiarism(content, documentId);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    res.json({
+      scanId: result.scanId,
+      status: result.status,
+      message: result.message
+    });
+  } catch (error) {
+    console.error('Plagiarism check error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Copyleaks webhook handler
+app.post('/api/webhooks/copyleaks/status/:scanId', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const { scanId } = req.params;
+    const payload = JSON.parse(req.body.toString());
+    
+    // Store the plagiarism check results
+    const { error } = await supabase
+      .from('plagiarism_checks')
+      .upsert({
+        scan_id: scanId,
+        status: payload.status,
+        results: payload.results || null,
+        similarity_score: payload.results?.overallScore || null,
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Error storing plagiarism results:', error);
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Copyleaks webhook error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get plagiarism check results
+app.get('/api/ai/plagiarism-results/:scanId', authenticate, authorize(['Admin', 'Leader']), async (req, res) => {
+  try {
+    const { scanId } = req.params;
+    
+    const { data, error } = await supabase
+      .from('plagiarism_checks')
+      .select('*')
+      .eq('scan_id', scanId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Plagiarism check not found' });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Plagiarism results error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== STRIPE PAYMENT ROUTES ====================
+
+// Create Stripe customer
+app.post('/api/stripe/create-customer', authenticate, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { paymentMethodId } = req.body;
+    
+    // Check if customer already exists
+    const { data: existingSubscription } = await supabase
+      .from('subscriptions')
+      .select('stripe_customer_id')
+      .eq('user_id', req.user.id)
+      .single();
+
+    let customerId = existingSubscription?.stripe_customer_id;
+
+    if (!customerId) {
+      // Create new Stripe customer
+      const customer = await stripe.customers.create({
+        email: req.userProfile.email,
+        name: req.userProfile.display_name,
+        metadata: {
+          user_id: req.user.id,
+          house: req.userProfile.house?.name || 'None'
+        }
+      });
+      customerId = customer.id;
+    }
+
+    // Attach payment method if provided
+    if (paymentMethodId) {
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: customerId,
+      });
+
+      // Set as default payment method
+      await stripe.customers.update(customerId, {
+        invoice_settings: {
+          default_payment_method: paymentMethodId,
+        },
+      });
+    }
+
+    res.json({ customerId });
+  } catch (error) {
+    console.error('Stripe customer creation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get subscription plans
+app.get('/api/stripe/plans', authenticate, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    // Get all active prices
+    const prices = await stripe.prices.list({
+      active: true,
+      expand: ['data.product']
+    });
+
+    const plans = prices.data
+      .filter(price => price.product.active)
+      .map(price => ({
+        id: price.id,
+        productId: price.product.id,
+        name: price.product.name,
+        description: price.product.description,
+        amount: price.unit_amount,
+        currency: price.currency,
+        interval: price.recurring?.interval,
+        intervalCount: price.recurring?.interval_count,
+        features: price.product.metadata.features ? 
+          JSON.parse(price.product.metadata.features) : [],
+        popular: price.product.metadata.popular === 'true'
+      }))
+      .sort((a, b) => a.amount - b.amount);
+
+    res.json({ plans });
+  } catch (error) {
+    console.error('Plans fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+});
+
+// Create subscription
+app.post('/api/stripe/create-subscription', authenticate, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { priceId, paymentMethodId } = req.body;
+
+    if (!priceId) {
+      return res.status(400).json({ error: 'Price ID is required' });
+    }
+
+    // Get or create customer
+    const customerResponse = await fetch(`${process.env.CLIENT_URL}/api/stripe/create-customer`, {
+      method: 'POST',
+      headers: {
+        'Authorization': req.headers.authorization,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ paymentMethodId })
+    });
+
+    if (!customerResponse.ok) {
+      throw new Error('Failed to create customer');
+    }
+
+    const { customerId } = await customerResponse.json();
+
+    // Create subscription
+    const subscription = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: priceId }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { save_default_payment_method: 'on_subscription' },
+      expand: ['latest_invoice.payment_intent', 'customer'],
+      metadata: {
+        user_id: req.user.id
+      }
+    });
+
+    // Store subscription in database
+    const { error } = await supabase
+      .from('subscriptions')
+      .upsert({
+        user_id: req.user.id,
+        stripe_subscription_id: subscription.id,
+        stripe_customer_id: customerId,
+        status: subscription.status,
+        price_id: priceId,
+        current_period_start: new Date(subscription.current_period_start * 1000),
+        current_period_end: new Date(subscription.current_period_end * 1000),
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Database subscription error:', error);
+      // Don't fail the request, but log the error
+    }
+
+    res.json({
+      subscriptionId: subscription.id,
+      clientSecret: subscription.latest_invoice.payment_intent?.client_secret,
+      status: subscription.status
+    });
+  } catch (error) {
+    console.error('Subscription creation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's current subscription
+app.get('/api/stripe/subscription', authenticate, async (req, res) => {
+  try {
+    const { data: subscription, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error || !subscription) {
+      return res.json({ subscription: null });
+    }
+
+    // Get fresh data from Stripe if needed
+    if (stripe && subscription.stripe_subscription_id) {
+      try {
+        const stripeSubscription = await stripe.subscriptions.retrieve(
+          subscription.stripe_subscription_id,
+          { expand: ['items.data.price.product'] }
+        );
+
+        // Update local data if status changed
+        if (stripeSubscription.status !== subscription.status) {
+          await supabase
+            .from('subscriptions')
+            .update({
+              status: stripeSubscription.status,
+              current_period_start: new Date(stripeSubscription.current_period_start * 1000),
+              current_period_end: new Date(stripeSubscription.current_period_end * 1000),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', subscription.id);
+        }
+
+        res.json({ 
+          subscription: {
+            ...subscription,
+            status: stripeSubscription.status,
+            product: stripeSubscription.items.data[0]?.price?.product,
+            current_period_start: new Date(stripeSubscription.current_period_start * 1000),
+            current_period_end: new Date(stripeSubscription.current_period_end * 1000)
+          }
+        });
+      } catch (stripeError) {
+        console.error('Stripe subscription fetch error:', stripeError);
+        res.json({ subscription });
+      }
+    } else {
+      res.json({ subscription });
+    }
+  } catch (error) {
+    console.error('Subscription fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch subscription' });
+  }
+});
+
+// Cancel subscription
+app.post('/api/stripe/cancel-subscription', authenticate, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { data: subscription, error } = await supabase
+      .from('subscriptions')
+      .select('stripe_subscription_id')
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error || !subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Cancel at period end to allow access until current period expires
+    const canceledSubscription = await stripe.subscriptions.update(
+      subscription.stripe_subscription_id,
+      { cancel_at_period_end: true }
+    );
+
+    // Update database
+    await supabase
+      .from('subscriptions')
+      .update({
+        status: 'cancel_at_period_end',
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', req.user.id);
+
+    res.json({ 
+      message: 'Subscription will cancel at the end of the current period',
+      periodEnd: new Date(canceledSubscription.current_period_end * 1000)
+    });
+  } catch (error) {
+    console.error('Subscription cancellation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Resume subscription
+app.post('/api/stripe/resume-subscription', authenticate, async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { data: subscription, error } = await supabase
+      .from('subscriptions')
+      .select('stripe_subscription_id')
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error || !subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Resume subscription
+    const resumedSubscription = await stripe.subscriptions.update(
+      subscription.stripe_subscription_id,
+      { cancel_at_period_end: false }
+    );
+
+    // Update database
+    await supabase
+      .from('subscriptions')
+      .update({
+        status: resumedSubscription.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', req.user.id);
+
+    res.json({ message: 'Subscription resumed successfully' });
+  } catch (error) {
+    console.error('Subscription resume error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Stripe webhook handler
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripe || !webhookSecret) {
+    return res.status(500).json({ error: 'Stripe not configured' });
+  }
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        const subscription = event.data.object;
+        await supabase
+          .from('subscriptions')
+          .upsert({
+            stripe_subscription_id: subscription.id,
+            stripe_customer_id: subscription.customer,
+            status: subscription.status,
+            price_id: subscription.items.data[0].price.id,
+            current_period_start: new Date(subscription.current_period_start * 1000),
+            current_period_end: new Date(subscription.current_period_end * 1000),
+            updated_at: new Date().toISOString()
+          });
+        break;
+
+      case 'customer.subscription.deleted':
+        const deletedSubscription = event.data.object;
+        await supabase
+          .from('subscriptions')
+          .update({
+            status: 'canceled',
+            updated_at: new Date().toISOString()
+          })
+          .eq('stripe_subscription_id', deletedSubscription.id);
+        break;
+
+      case 'invoice.payment_succeeded':
+        const invoice = event.data.object;
+        if (invoice.subscription) {
+          // Update subscription status to active
+          await supabase
+            .from('subscriptions')
+            .update({
+              status: 'active',
+              updated_at: new Date().toISOString()
+            })
+            .eq('stripe_subscription_id', invoice.subscription);
+        }
+        break;
+
+      case 'invoice.payment_failed':
+        const failedInvoice = event.data.object;
+        if (failedInvoice.subscription) {
+          await supabase
+            .from('subscriptions')
+            .update({
+              status: 'past_due',
+              updated_at: new Date().toISOString()
+            })
+            .eq('stripe_subscription_id', failedInvoice.subscription);
+        }
+        break;
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
