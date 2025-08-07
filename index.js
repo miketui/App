@@ -3,6 +3,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const Redis = require('redis');
 const Stripe = require('stripe');
+const { callClaude, callOpenAI } = require('./aiClient');
 
 // Environment variables
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -138,6 +139,41 @@ app.post('/api/ai/summarize', authenticate, async (req, res) => {
   if (!text) return res.status(400).json({ message: 'text required' });
   // TODO: call OpenAI/Claude API using openaiKey/claudeKey
   res.json({ summary: 'This is a stub summary.' });
+});
+
+// AI Content Generation
+app.post('/api/ai/generate-caption', authenticate, async (req, res) => {
+  const { content, mediaType } = req.body;
+  if (!content) return res.status(400).json({ message: 'content is required' });
+  try {
+    const prompt = `Generate an engaging social media caption for the following content. Media type: ${mediaType}. Content: ${content}`;
+    const caption = await callClaude(prompt);
+    res.json({ caption });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'AI error' });
+  }
+});
+
+// Content Moderation
+app.post('/api/ai/moderate-content', authenticate, async (req, res) => {
+  const { content, contentType } = req.body;
+  if (!content) return res.status(400).json({ message: 'content is required' });
+  try {
+    // For demo, call OpenAI moderation endpoint (simplified)
+    const result = await callOpenAI(`Is the following ${contentType} appropriate? Respond with OK or FLAG.
+${content}`);
+    res.json({ result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'AI error' });
+  }
+});
+
+// Community Insights stub
+app.get('/api/ai/community-insights', authenticate, authorize(['Admin']), async (_req, res) => {
+  // TODO: implement analytics
+  res.json({ insights: [] });
 });
 
 // ----------------------------------
