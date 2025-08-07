@@ -1,0 +1,167 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm run build",
+    "watchPatterns": [
+      "src/**/*",
+      "backend/**/*",
+      "package.json"
+    ]
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "NODE_ENV": "production",
+        "PORT": "3000",
+        "DATABASE_URL": "{{Postgres.DATABASE_URL}}",
+        "REDIS_URL": "{{Redis.REDIS_URL}}",
+        "SUPABASE_URL": "{{SUPABASE_URL}}",
+        "SUPABASE_ANON_KEY": "{{SUPABASE_ANON_KEY}}",
+        "SUPABASE_SERVICE_ROLE_KEY": "{{SUPABASE_SERVICE_ROLE_KEY}}",
+        "JWT_SECRET": "{{JWT_SECRET}}",
+        "STRIPE_SECRET_KEY": "{{STRIPE_SECRET_KEY}}",
+        "STRIPE_WEBHOOK_SECRET": "{{STRIPE_WEBHOOK_SECRET}}",
+        "OPENAI_API_KEY": "{{OPENAI_API_KEY}}",
+        "ANTHROPIC_API_KEY": "{{ANTHROPIC_API_KEY}}",
+        "VAPID_PUBLIC_KEY": "{{VAPID_PUBLIC_KEY}}",
+        "VAPID_PRIVATE_KEY": "{{VAPID_PRIVATE_KEY}}",
+        "CORS_ORIGIN": "https://hausofbasquiat.com",
+        "LOG_LEVEL": "info"
+      }
+    },
+    "staging": {
+      "variables": {
+        "NODE_ENV": "staging",
+        "PORT": "3000",
+        "DATABASE_URL": "{{Postgres.DATABASE_URL}}",
+        "REDIS_URL": "{{Redis.REDIS_URL}}",
+        "SUPABASE_URL": "{{SUPABASE_URL}}",
+        "SUPABASE_ANON_KEY": "{{SUPABASE_ANON_KEY}}",
+        "SUPABASE_SERVICE_ROLE_KEY": "{{SUPABASE_SERVICE_ROLE_KEY}}",
+        "JWT_SECRET": "{{JWT_SECRET}}",
+        "STRIPE_SECRET_KEY": "{{STRIPE_SECRET_KEY}}",
+        "STRIPE_WEBHOOK_SECRET": "{{STRIPE_WEBHOOK_SECRET}}",
+        "OPENAI_API_KEY": "{{OPENAI_API_KEY}}",
+        "ANTHROPIC_API_KEY": "{{ANTHROPIC_API_KEY}}",
+        "VAPID_PUBLIC_KEY": "{{VAPID_PUBLIC_KEY}}",
+        "VAPID_PRIVATE_KEY": "{{VAPID_PRIVATE_KEY}}",
+        "CORS_ORIGIN": "https://staging.hausofbasquiat.com",
+        "LOG_LEVEL": "debug"
+      }
+    }
+  },
+  "services": [
+    {
+      "name": "haus-of-basquiat-api",
+      "source": {
+        "type": "github",
+        "repo": "haus-of-basquiat/api",
+        "branch": "main"
+      },
+      "domains": [
+        {
+          "name": "api.hausofbasquiat.com",
+          "environment": "production"
+        },
+        {
+          "name": "api-staging.hausofbasquiat.com",
+          "environment": "staging"
+        }
+      ]
+    },
+    {
+      "name": "haus-of-basquiat-web",
+      "source": {
+        "type": "github",
+        "repo": "haus-of-basquiat/web",
+        "branch": "main"
+      },
+      "domains": [
+        {
+          "name": "hausofbasquiat.com",
+          "environment": "production"
+        },
+        {
+          "name": "staging.hausofbasquiat.com",
+          "environment": "staging"
+        }
+      ]
+    }
+  ],
+  "plugins": [
+    {
+      "name": "postgresql",
+      "version": "15",
+      "variables": {
+        "POSTGRES_DB": "hausofbasquiat",
+        "POSTGRES_USER": "postgres"
+      }
+    },
+    {
+      "name": "redis",
+      "version": "7",
+      "variables": {
+        "REDIS_PASSWORD": "{{REDIS_PASSWORD}}"
+      }
+    }
+  ],
+  "monitoring": {
+    "enabled": true,
+    "metrics": {
+      "cpu": true,
+      "memory": true,
+      "disk": true,
+      "network": true
+    },
+    "alerts": [
+      {
+        "name": "High CPU Usage",
+        "condition": "cpu > 80",
+        "duration": "5m",
+        "channels": ["slack", "email"]
+      },
+      {
+        "name": "High Memory Usage",
+        "condition": "memory > 85",
+        "duration": "5m",
+        "channels": ["slack", "email"]
+      },
+      {
+        "name": "Service Down",
+        "condition": "health_check_failed",
+        "duration": "1m",
+        "channels": ["slack", "email", "pagerduty"]
+      }
+    ]
+  },
+  "scaling": {
+    "min": 1,
+    "max": 10,
+    "target_cpu": 70,
+    "target_memory": 80
+  },
+  "backup": {
+    "enabled": true,
+    "schedule": "0 2 * * *",
+    "retention": "30d",
+    "storage": "s3"
+  },
+  "security": {
+    "ssl": true,
+    "hsts": true,
+    "csp": true,
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 100,
+      "burst_size": 20
+    }
+  }
+}

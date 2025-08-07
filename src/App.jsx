@@ -10,6 +10,9 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import Navigation from './components/Navigation';
 import LoadingSpinner from './components/LoadingSpinner';
+import SubscriptionPlans from './components/SubscriptionPlans';
+import EventManager from './components/EventManager';
+import AdminDashboard from './components/AdminDashboard';
 
 function PrivateRoute({ children, roles = [] }) {
   const { userProfile, loading } = useAuth();
@@ -81,6 +84,42 @@ function AppContent() {
                 <ProfilePage />
               </PrivateRoute>
             }
+          />
+          <Route 
+            path="/subscriptions" 
+            element={
+              <PrivateRoute roles={['Member', 'Leader', 'Admin']}>
+                <div className="container mx-auto px-4 py-8">
+                  <SubscriptionPlans 
+                    currentPlan={userProfile?.subscription_plan}
+                    onPlanChange={(planId) => {
+                      // Handle plan change
+                      console.log('Plan changed to:', planId);
+                    }}
+                  />
+                </div>
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/events" 
+            element={
+              <PrivateRoute roles={['Admin', 'Leader', 'Member']}>
+                <div className="container mx-auto px-4 py-8">
+                  <EventManager userRole={userProfile?.role} />
+                </div>
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              <PrivateRoute roles={['Admin', 'Leader']}>
+                <div className="container mx-auto px-4 py-8">
+                  <AdminDashboard />
+                </div>
+              </PrivateRoute>
+            } 
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

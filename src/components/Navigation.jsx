@@ -14,7 +14,10 @@ import {
   Users,
   Shield,
   Award,
-  ChevronDown
+  ChevronDown,
+  CreditCard,
+  Calendar,
+  BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,10 +47,22 @@ function Navigation() {
       roles: ['Member', 'Leader', 'Admin']
     },
     {
-      name: 'Dashboard',
-      href: '/dashboard',
-      icon: Settings,
-      roles: ['Admin']
+      name: 'Events',
+      href: '/events',
+      icon: Calendar,
+      roles: ['Member', 'Leader', 'Admin']
+    },
+    {
+      name: 'Subscriptions',
+      href: '/subscriptions',
+      icon: CreditCard,
+      roles: ['Member', 'Leader', 'Admin']
+    },
+    {
+      name: 'Admin',
+      href: '/admin',
+      icon: BarChart3,
+      roles: ['Admin', 'Leader']
     }
   ];
 
