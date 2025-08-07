@@ -1,17 +1,17 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
-import FeedPage from './pages/FeedPage';
-import DocsPage from './pages/DocsPage';
-import ChatPage from './pages/ChatPage';
-import DashboardPage from './pages/DashboardPage';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import LoginPage from './LoginPage';
+import FeedPage from './FeedPage';
+import DocsPage from './DocsPage';
+import ChatPage from './ChatPage';
+import DashboardPage from './DashboardPage';
+import { AuthProvider, useAuth } from './AuthContext';
 
 function PrivateRoute({ children, roles }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" />;
+  if (roles && !roles.includes(profile?.role)) return <Navigate to="/" />;
   return children;
 }
 

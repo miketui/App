@@ -5,13 +5,13 @@ const Redis = require('redis');
 const Stripe = require('stripe');
 
 // Environment variables
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const redisUrl = process.env.UPSTASH_REDIS_URL;
-const stripeKey = process.env.STRIPE_KEY;
-const copyleaksKey = process.env.COPYLEAKS_KEY;
-const openaiKey = process.env.OPENAI_KEY;
-const claudeKey = process.env.CLAUDE_KEY;
+const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_KEY;
+const copyleaksKey = process.env.COPYLEAKS_API_KEY || process.env.COPYLEAKS_KEY;
+const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+const claudeKey = process.env.CLAUDE_API_KEY || process.env.CLAUDE_KEY;
 
 // Initialize clients
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -38,6 +38,16 @@ async function authenticate(req, res, next) {
     console.error(err);
     res.status(401).json({ message: 'Invalid token' });
   }
+}
+
+// Authorization helper – pass array of allowed roles
+function authorize(roles = []) {
+  return (req, res, next) => {
+    if (!roles.length) return next();
+    if (!req.user || !roles.includes(req.user.role))
+      return res.status(403).json({ message: 'Forbidden' });
+    next();
+  };
 }
 
 // Route: Magic Link Login (Trigger email from backend for convenience)
@@ -128,6 +138,75 @@ app.post('/api/ai/summarize', authenticate, async (req, res) => {
   if (!text) return res.status(400).json({ message: 'text required' });
   // TODO: call OpenAI/Claude API using openaiKey/claudeKey
   res.json({ summary: 'This is a stub summary.' });
+});
+
+// ----------------------------------
+// User profile routes
+// ----------------------------------
+app.get('/api/user/me', authenticate, async (req, res) => {
+  const { id } = req.user;
+  const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
+  if (error) return res.status(500).json({ message: error.message });
+  res.json(data);
+});
+
+app.put('/api/user/me', authenticate, async (req, res) => {
+  const { id } = req.user;
+  const allowedFields = ['house_id', 'profile_data', 'status'];
+  const updates = Object.keys(req.body)
+    .filter((k) => allowedFields.includes(k))
+    .reduce((obj, key) => ({ ...obj, [key]: req.body[key] }), {});
+  if (!Object.keys(updates).length) return res.status(400).json({ message: 'No valid fields' });
+  updates.updated_at = new Date().toISOString();
+  const { data, error } = await supabase.from('users').update(updates).eq('id', id).select('*').single();
+  if (error) return res.status(500).json({ message: error.message });
+  res.json(data);
+});
+
+// ----------------------------------
+// Applicant workflow
+// ----------------------------------
+app.post('/api/applications', authenticate, authorize(['Applicant']), async (req, res) => {
+  const { applicant_data } = req.body;
+  if (!applicant_data) return res.status(400).json({ message: 'applicant_data required' });
+  const { id: user_id } = req.user;
+  const { data, error } = await supabase
+    .from('user_applications')
+    .insert({ applicant_data, reviewed_by: null })
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ message: error.message });
+  res.json(data);
+});
+
+app.get('/api/applications', authenticate, authorize(['Admin']), async (_req, res) => {
+  const { data, error } = await supabase.from('user_applications').select('*').eq('status', 'pending');
+  if (error) return res.status(500).json({ message: error.message });
+  res.json(data);
+});
+
+app.patch('/api/applications/:id', authenticate, authorize(['Admin']), async (req, res) => {
+  const { id } = req.params;
+  const { action, review_notes } = req.body; // action = 'approve' | 'reject'
+  if (!['approve', 'reject'].includes(action))
+    return res.status(400).json({ message: 'Invalid action' });
+  const status = action === 'approve' ? 'approved' : 'rejected';
+
+  // Update application row
+  const { data: appData, error: appErr } = await supabase
+    .from('user_applications')
+    .update({ status, review_notes, reviewed_at: new Date().toISOString(), reviewed_by: req.user.id })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (appErr) return res.status(500).json({ message: appErr.message });
+
+  // If approved, update user role & status
+  if (status === 'approved') {
+    await supabase.from('users').update({ role: 'Member', status: 'active' }).eq('id', appData.applicant_data.user_id);
+  }
+
+  res.json(appData);
 });
 
 const port = process.env.PORT || 4000;
