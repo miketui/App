@@ -5,13 +5,13 @@ const Redis = require('redis');
 const Stripe = require('stripe');
 
 // Environment variables
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const redisUrl = process.env.UPSTASH_REDIS_URL;
-const stripeKey = process.env.STRIPE_KEY;
-const copyleaksKey = process.env.COPYLEAKS_KEY;
-const openaiKey = process.env.OPENAI_KEY;
-const claudeKey = process.env.CLAUDE_KEY;
+const stripeKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_KEY;
+const copyleaksKey = process.env.COPYLEAKS_API_KEY || process.env.COPYLEAKS_KEY;
+const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+const claudeKey = process.env.CLAUDE_API_KEY || process.env.CLAUDE_KEY;
 
 // Initialize clients
 const supabase = createClient(supabaseUrl, supabaseKey);

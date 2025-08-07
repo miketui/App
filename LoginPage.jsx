@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from './AuthContext';
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
-  const { supabase } = useAuth();
+  const { signInWithEmail } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email) return;
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+    const { error } = await signInWithEmail(email);
     if (!error) setSent(true);
   };
 
