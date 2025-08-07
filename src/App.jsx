@@ -9,6 +9,8 @@ import FeedPage from './pages/FeedPage';
 import DocsPage from './pages/DocsPage';
 import ChatPage from './pages/ChatPage';
 import DashboardPage from './pages/DashboardPage';
+import ApplyPage from './pages/ApplyPage';
+import ProfilePage from './pages/ProfilePage';
 
 // Components
 import LoadingSpinner from './components/LoadingSpinner';
@@ -31,7 +33,11 @@ function PrivateRoute({ children, roles, requiresApproval = false }) {
   }
 
   // Check if user needs to complete application
-  if (userProfile.role === 'Applicant' && userProfile.status === 'pending' && requiresApproval) {
+  if (
+    requiresApproval &&
+    userProfile.role === 'Applicant' &&
+    userProfile.status === 'pending'
+  ) {
     return <Navigate to="/apply" replace />;
   }
 
@@ -78,11 +84,21 @@ function AppRoutes() {
       />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
-      {/* Protected routes */}
+      {/* Application route (accessible to any authenticated user) */}
+      <Route
+        path="/apply"
+        element={
+          <PrivateRoute>
+            <ApplyPage />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Protected routes that require approval */}
       <Route
         path="/"
         element={
-          <PrivateRoute roles={['Member', 'Leader', 'Admin']}>
+          <PrivateRoute roles={['Member', 'Leader', 'Admin']} requiresApproval={true}>
             <FeedPage />
           </PrivateRoute>
         }
@@ -90,7 +106,7 @@ function AppRoutes() {
       <Route
         path="/docs"
         element={
-          <PrivateRoute roles={['Member', 'Leader', 'Admin']}>
+          <PrivateRoute roles={['Member', 'Leader', 'Admin']} requiresApproval={true}>
             <DocsPage />
           </PrivateRoute>
         }
@@ -98,15 +114,23 @@ function AppRoutes() {
       <Route
         path="/chat"
         element={
-          <PrivateRoute roles={['Member', 'Leader', 'Admin']}>
+          <PrivateRoute roles={['Member', 'Leader', 'Admin']} requiresApproval={true}>
             <ChatPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <PrivateRoute roles={['Member', 'Leader', 'Admin']} requiresApproval={true}>
+            <ProfilePage />
           </PrivateRoute>
         }
       />
       <Route
         path="/dashboard"
         element={
-          <PrivateRoute roles={['Admin']}>
+          <PrivateRoute roles={['Admin']} requiresApproval={true}>
             <DashboardPage />
           </PrivateRoute>
         }

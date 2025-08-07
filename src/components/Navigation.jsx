@@ -37,6 +37,12 @@ const Navigation = () => {
       roles: ['Member', 'Leader', 'Admin']
     },
     { 
+      path: '/profile', 
+      label: 'Profile', 
+      icon: User,
+      roles: ['Member', 'Leader', 'Admin']
+    },
+    { 
       path: '/dashboard', 
       label: 'Dashboard', 
       icon: Settings,
