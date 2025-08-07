@@ -510,6 +510,484 @@ app.get('/api/documents/categories', authenticate, async (req, res) => {
   }
 });
 
+// ==================== MESSAGING ROUTES ====================
+
+// Get user's chat threads
+app.get('/api/chat/threads', authenticate, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('chat_threads')
+      .select(`
+        *,
+        participants:user_profiles!inner(id, display_name, avatar_url),
+        last_message:messages(content, created_at, sender_id, message_type)
+      `)
+      .contains('participants', [req.user.id])
+      .order('last_message_at', { ascending: false });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Format threads with participant info and last message
+    const formattedThreads = data.map(thread => {
+      const otherParticipants = thread.participants.filter(p => p.id !== req.user.id);
+      const lastMessage = thread.last_message?.[0];
+      
+      return {
+        ...thread,
+        other_participants: otherParticipants,
+        last_message: lastMessage,
+        unread_count: 0 // TODO: Implement unread count
+      };
+    });
+
+    res.json({ threads: formattedThreads });
+  } catch (error) {
+    console.error('Threads fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create new chat thread
+app.post('/api/chat/threads', authenticate, async (req, res) => {
+  try {
+    const { participantIds, name, threadType = 'direct' } = req.body;
+    
+    if (!participantIds || participantIds.length === 0) {
+      return res.status(400).json({ error: 'Participant IDs are required' });
+    }
+
+    // Include current user in participants
+    const allParticipants = [...new Set([req.user.id, ...participantIds])];
+    
+    // For direct messages, check if thread already exists
+    if (threadType === 'direct' && allParticipants.length === 2) {
+      const { data: existingThread } = await supabase
+        .from('chat_threads')
+        .select('*')
+        .eq('thread_type', 'direct')
+        .contains('participants', allParticipants)
+        .containedBy('participants', allParticipants)
+        .single();
+
+      if (existingThread) {
+        return res.json({ thread: existingThread });
+      }
+    }
+
+    const { data: thread, error } = await supabase
+      .from('chat_threads')
+      .insert({
+        name,
+        thread_type: threadType,
+        participants: allParticipants,
+        created_by: req.user.id
+      })
+      .select(`
+        *,
+        participants:user_profiles!inner(id, display_name, avatar_url)
+      `)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ thread });
+  } catch (error) {
+    console.error('Thread creation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get messages for a thread
+app.get('/api/chat/threads/:threadId/messages', authenticate, async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Check if user is participant in thread
+    const { data: thread, error: threadError } = await supabase
+      .from('chat_threads')
+      .select('participants')
+      .eq('id', threadId)
+      .single();
+
+    if (threadError || !thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    if (!thread.participants.includes(req.user.id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        sender:user_profiles!messages_sender_id_fkey(display_name, avatar_url),
+        reply_to_message:messages!messages_reply_to_fkey(content, sender_id)
+      `)
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Mark messages as read
+    await supabase
+      .from('message_reads')
+      .upsert({
+        user_id: req.user.id,
+        thread_id: threadId,
+        last_read_at: new Date().toISOString()
+      });
+
+    res.json({ messages: messages.reverse() });
+  } catch (error) {
+    console.error('Messages fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Send message
+app.post('/api/chat/threads/:threadId/messages', authenticate, upload.single('file'), async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const { content, messageType = 'text', replyTo } = req.body;
+
+    // Check if user is participant in thread
+    const { data: thread, error: threadError } = await supabase
+      .from('chat_threads')
+      .select('participants')
+      .eq('id', threadId)
+      .single();
+
+    if (threadError || !thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    if (!thread.participants.includes(req.user.id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    let fileUrl = null;
+    
+    // Handle file upload
+    if (req.file) {
+      const fileExt = req.file.originalname.split('.').pop();
+      const fileName = `${uuidv4()}.${fileExt}`;
+      const filePath = `chat/${threadId}/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(filePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false
+        });
+
+      if (uploadError) {
+        return res.status(400).json({ error: uploadError.message });
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(filePath);
+
+      fileUrl = publicUrl;
+    }
+
+    // Insert message
+    const { data: message, error } = await supabase
+      .from('messages')
+      .insert({
+        thread_id: threadId,
+        sender_id: req.user.id,
+        content: content || null,
+        message_type: messageType,
+        file_url: fileUrl,
+        reply_to: replyTo || null
+      })
+      .select(`
+        *,
+        sender:user_profiles!messages_sender_id_fkey(display_name, avatar_url),
+        reply_to_message:messages!messages_reply_to_fkey(content, sender_id)
+      `)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Update thread's last message timestamp
+    await supabase
+      .from('chat_threads')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', threadId);
+
+    res.json({ message });
+  } catch (error) {
+    console.error('Message send error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get users for starting new conversations
+app.get('/api/users', authenticate, async (req, res) => {
+  try {
+    const { search = '', exclude = [] } = req.query;
+    let query = supabase
+      .from('user_profiles')
+      .select('id, display_name, avatar_url, role, house:houses(name)')
+      .in('role', ['Member', 'Leader', 'Admin'])
+      .neq('id', req.user.id);
+
+    if (search) {
+      query = query.ilike('display_name', `%${search}%`);
+    }
+
+    if (exclude.length > 0) {
+      query = query.not('id', 'in', `(${exclude.join(',')})`);
+    }
+
+    const { data, error } = await query.limit(20);
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ users: data });
+  } catch (error) {
+    console.error('Users fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== SOCIAL FEED ROUTES ====================
+
+// Get posts feed
+app.get('/api/posts', authenticate, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, houseOnly = false } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from('posts')
+      .select(`
+        *,
+        author:user_profiles!posts_author_id_fkey(display_name, avatar_url, house:houses(name)),
+        _count_likes:post_likes(count),
+        _count_comments:comments(count),
+        user_liked:post_likes!inner(user_id)
+      `)
+      .eq('moderation_status', 'approved')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    // Apply visibility filters
+    if (houseOnly && req.userProfile.house_id) {
+      query = query.eq('house_id', req.userProfile.house_id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    // Format posts with like status
+    const formattedPosts = data.map(post => ({
+      ...post,
+      likes_count: post._count_likes?.[0]?.count || 0,
+      comments_count: post._count_comments?.[0]?.count || 0,
+      user_liked: post.user_liked?.some(like => like.user_id === req.user.id) || false
+    }));
+
+    res.json({ posts: formattedPosts });
+  } catch (error) {
+    console.error('Posts fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create new post
+app.post('/api/posts', authenticate, authorize(['Member', 'Leader', 'Admin']), upload.array('media', 5), async (req, res) => {
+  try {
+    const { content, visibility = 'public', houseId } = req.body;
+    
+    if (!content && (!req.files || req.files.length === 0)) {
+      return res.status(400).json({ error: 'Post must have content or media' });
+    }
+
+    let mediaUrls = [];
+    
+    // Handle media uploads
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const fileExt = file.originalname.split('.').pop();
+        const fileName = `${uuidv4()}.${fileExt}`;
+        const filePath = `posts/${req.user.id}/${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('posts-media')
+          .upload(filePath, file.buffer, {
+            contentType: file.mimetype,
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error('Media upload error:', uploadError);
+          continue; // Skip failed uploads
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('posts-media')
+          .getPublicUrl(filePath);
+
+        mediaUrls.push(publicUrl);
+      }
+    }
+
+    // Create post
+    const { data: post, error } = await supabase
+      .from('posts')
+      .insert({
+        author_id: req.user.id,
+        content,
+        media_urls: mediaUrls,
+        visibility,
+        house_id: houseId || req.userProfile.house_id,
+        moderation_status: 'approved' // Auto-approve for now
+      })
+      .select(`
+        *,
+        author:user_profiles!posts_author_id_fkey(display_name, avatar_url, house:houses(name))
+      `)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ post: { ...post, likes_count: 0, comments_count: 0, user_liked: false } });
+  } catch (error) {
+    console.error('Post creation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Like/unlike post
+app.post('/api/posts/:postId/like', authenticate, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    // Check if already liked
+    const { data: existingLike } = await supabase
+      .from('post_likes')
+      .select('*')
+      .eq('post_id', postId)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (existingLike) {
+      // Unlike
+      const { error } = await supabase
+        .from('post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', req.user.id);
+
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+
+      res.json({ liked: false });
+    } else {
+      // Like
+      const { error } = await supabase
+        .from('post_likes')
+        .insert({
+          post_id: postId,
+          user_id: req.user.id
+        });
+
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+
+      res.json({ liked: true });
+    }
+  } catch (error) {
+    console.error('Like toggle error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get comments for a post
+app.get('/api/posts/:postId/comments', authenticate, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const { data, error } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        author:user_profiles!comments_author_id_fkey(display_name, avatar_url),
+        reply_to_comment:comments!comments_reply_to_fkey(author_id, content)
+      `)
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ comments: data });
+  } catch (error) {
+    console.error('Comments fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add comment to post
+app.post('/api/posts/:postId/comments', authenticate, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { content, replyTo } = req.body;
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Comment content is required' });
+    }
+
+    const { data: comment, error } = await supabase
+      .from('comments')
+      .insert({
+        post_id: postId,
+        author_id: req.user.id,
+        content: content.trim(),
+        reply_to: replyTo || null
+      })
+      .select(`
+        *,
+        author:user_profiles!comments_author_id_fkey(display_name, avatar_url)
+      `)
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ comment });
+  } catch (error) {
+    console.error('Comment creation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // Global error handler
