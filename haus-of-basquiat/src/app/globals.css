@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  /* Basquiat Color System */
+  --bg: #0B0B0B;          /* near-black canvas */
+  --surface: #111113;     /* deep charcoal */
+  --text: #F2F2F2;        /* chalk white */
+  --muted: #B8B8B8;       /* gray pencil */
+  --accent-yellow: #F7D046; /* crown yellow */
+  --accent-red: #E1423A;    /* crimson mark */
+  --accent-blue: #2A7DE1;   /* electric blue */
+  --accent-teal: #2BB7A9;   /* paint teal */
+  --accent-pink: #F45FA5;   /* neon pink */
+  --focus: #F7D046;       /* focus rings */
+
+  /* Next.js compatibility */
+  --background: var(--bg);
+  --foreground: var(--text);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-variant-numeric: lining-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-blue);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-yellow);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--text);
+}
+
+h1 {
+  font-size: 2.5rem;
+  font-weight: 800;
+}
+
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* Focus styles */
+*:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Selection styles */
+::selection {
+  background: var(--accent-yellow);
+  color: var(--bg);
+}
+
+/* Button reset */
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Input reset */
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Link reset */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* List reset */
+ul, ol {
+  list-style: none;
+}
+
+/* Image reset */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Utility classes */
+.basquiat-gradient {
+  background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-red) 50%, var(--accent-blue) 100%);
+}
+
+.basquiat-text-gradient {
+  background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-red) 50%, var(--accent-blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.basquiat-shadow {
+  box-shadow: 
+    0 4px 6px -1px rgba(247, 208, 70, 0.1),
+    0 2px 4px -1px rgba(247, 208, 70, 0.06);
+}
+
+.basquiat-border {
+  border: 2px solid var(--accent-blue);
+}
+
+.basquiat-glow {
+  box-shadow: 0 0 20px rgba(247, 208, 70, 0.3);
+}
+
+/* Animation classes */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s infinite;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+  }
+}
