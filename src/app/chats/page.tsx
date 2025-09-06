@@ -1,13 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { User } from '@supabase/supabase-js';
+import { useAuth } from '@/context/AuthContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 interface ChatMessage {
   id: string;
@@ -17,28 +29,23 @@ interface ChatMessage {
   created_at: string;
   sender?: {
     id: string;
-    username: string;
-    full_name: string;
+    display_name: string;
+    avatar_url: string;
     role: string;
   };
 }
 
 interface Conversation {
   id: string;
-  participants: string[];
-  last_message: string;
+  participants: any[];
+  last_message: any;
   last_message_at: string;
   created_at: string;
-  other_participant?: {
-    id: string;
-    username: string;
-    full_name: string;
-    role: string;
-  };
+  other_participants?: any[];
 }
 
 export default function ChatsPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -47,20 +54,12 @@ export default function ChatsPage() {
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const supabase = createClientComponentClient();
-
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        loadConversations(user.id);
-      }
-      setIsLoading(false);
-    };
-
-    getUser();
-  }, [supabase]);
+    if (user) {
+      loadConversations();
+    }
+    setIsLoading(false);
+  }, [user]);
 
   useEffect(() => {
     scrollToBottom();
@@ -70,39 +69,10 @@ export default function ChatsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadConversations = async (userId: string) => {
+  const loadConversations = async () => {
     try {
-      // Mock data for conversations since we don't have the database tables yet
-      const mockConversations = [
-        {
-          id: '1',
-          participants: [userId, 'user2'],
-          last_message: 'Hey! Love your latest post about Basquiat\'s work',
-          last_message_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          other_participant: {
-            id: 'user2',
-            username: 'artlover23',
-            full_name: 'Maya Chen',
-            role: 'curator'
-          }
-        },
-        {
-          id: '2',
-          participants: [userId, 'user3'],
-          last_message: 'Thanks for sharing that gallery info!',
-          last_message_at: new Date(Date.now() - 3600000).toISOString(),
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          other_participant: {
-            id: 'user3',
-            username: 'brooklyn_art',
-            full_name: 'Alex Rodriguez',
-            role: 'member'
-          }
-        }
-      ];
-
-      setConversations(mockConversations);
+      const response = await api.get('/chat/threads');
+      setConversations(response.data.threads);
     } catch (error) {
       console.error('Error loading conversations:', error);
     }
@@ -110,44 +80,8 @@ export default function ChatsPage() {
 
   const loadMessages = async (conversationId: string) => {
     try {
-      // Mock messages data
-      const mockMessages = [
-        {
-          id: '1',
-          content: 'Hey! Love your latest post about Basquiat\'s work',
-          sender_id: 'user2',
-          conversation_id: conversationId,
-          created_at: new Date(Date.now() - 7200000).toISOString(),
-          sender: {
-            id: 'user2',
-            username: 'artlover23',
-            full_name: 'Maya Chen',
-            role: 'curator'
-          }
-        },
-        {
-          id: '2',
-          content: 'Thank you! I\'ve been studying his techniques lately',
-          sender_id: user?.id || '',
-          conversation_id: conversationId,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: '3',
-          content: 'His use of text as art is so fascinating. Have you seen the Crown series?',
-          sender_id: 'user2',
-          conversation_id: conversationId,
-          created_at: new Date(Date.now() - 1800000).toISOString(),
-          sender: {
-            id: 'user2',
-            username: 'artlover23',
-            full_name: 'Maya Chen',
-            role: 'curator'
-          }
-        }
-      ];
-
-      setMessages(mockMessages);
+      const response = await api.get(`/chat/threads/${conversationId}/messages`);
+      setMessages(response.data.messages);
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -158,23 +92,15 @@ export default function ChatsPage() {
 
     setIsSending(true);
     try {
-      // Create new message
-      const newMsg: ChatMessage = {
-        id: Date.now().toString(),
-        content: newMessage.trim(),
-        sender_id: user.id,
-        conversation_id: activeConversation,
-        created_at: new Date().toISOString(),
-      };
-
-      setMessages(prev => [...prev, newMsg]);
+      const response = await api.post(`/chat/threads/${activeConversation}/messages`, { content: newMessage.trim() });
+      setMessages(prev => [...prev, response.data.message]);
       setNewMessage('');
       
       // Update conversation last message
       setConversations(prev => 
         prev.map(conv => 
           conv.id === activeConversation 
-            ? { ...conv, last_message: newMessage.trim(), last_message_at: new Date().toISOString() }
+            ? { ...conv, last_message: { content: newMessage.trim() }, last_message_at: new Date().toISOString() }
             : conv
         )
       );
@@ -261,23 +187,21 @@ export default function ChatsPage() {
                     <div className="flex items-center gap-3">
                       <Avatar className="w-10 h-10 border-2 border-black">
                         <div className="w-full h-full bg-basquiat-blue flex items-center justify-center text-white font-bold">
-                          {conversation.other_participant?.full_name?.charAt(0) || 
-                           conversation.other_participant?.username?.charAt(0) || 'U'}
+                          {conversation.other_participants[0]?.display_name?.charAt(0) || 'U'}
                         </div>
                       </Avatar>
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-black truncate">
-                            {conversation.other_participant?.full_name || 
-                             conversation.other_participant?.username || 'Unknown User'}
+                            {conversation.other_participants[0]?.display_name || 'Unknown User'}
                           </p>
-                          <Badge className={`${getRoleBadgeColor(conversation.other_participant?.role || 'member')} text-xs px-2 py-0`}>
-                            {conversation.other_participant?.role || 'member'}
+                          <Badge className={`${getRoleBadgeColor(conversation.other_participants[0]?.role || 'member')} text-xs px-2 py-0`}>
+                            {conversation.other_participants[0]?.role || 'member'}
                           </Badge>
                         </div>
                         <p className="text-sm text-gray-600 truncate">
-                          {conversation.last_message}
+                          {conversation.last_message?.content}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
                           {formatTime(conversation.last_message_at)}
@@ -314,7 +238,7 @@ export default function ChatsPage() {
                           {message.sender_id !== user?.id && message.sender && (
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-xs font-bold">
-                                {message.sender.full_name || message.sender.username}
+                                {message.sender.display_name}
                               </p>
                               <Badge className={`${getRoleBadgeColor(message.sender.role || 'member')} text-xs px-2 py-0`}>
                                 {message.sender.role || 'member'}

@@ -1,161 +1,76 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { User } from '@supabase/supabase-js';
+import { useAuth } from '@/context/AuthContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 interface Post {
   id: string;
   content: string;
   author_id: string;
   created_at: string;
-  like_count: number;
-  comment_count: number;
-  is_liked: boolean;
+  likes_count: number;
+  comments_count: number;
+  user_liked: boolean;
   author: {
     id: string;
-    username: string;
-    full_name: string;
-    role: string;
+    display_name: string;
+    avatar_url: string;
+    house: {
+      name: string;
+    }
   };
   tags?: string[];
 }
 
 export default function FeedPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newPost, setNewPost] = useState('');
   const [isPosting, setIsPosting] = useState(false);
 
-  const supabase = createClientComponentClient();
-
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      loadFeed();
-      setIsLoading(false);
+    const loadFeed = async () => {
+      try {
+        const response = await api.get('/posts');
+        setPosts(response.data.posts);
+      } catch (error) {
+        console.error('Error loading feed:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    getUser();
-  }, [supabase]);
-
-  const loadFeed = () => {
-    // Mock feed data
-    const mockPosts: Post[] = [
-      {
-        id: '1',
-        content: 'Just discovered an incredible analysis of Basquiat\'s "Untitled (Skull)" from 1981. The way he combines African mask traditions with contemporary urban art is absolutely revolutionary. The skull isn\'t just death - it\'s transformation, ancestry, and rebirth all at once. 💀✨',
-        author_id: 'user1',
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-        like_count: 23,
-        comment_count: 7,
-        is_liked: false,
-        author: {
-          id: 'user1',
-          username: 'artlover23',
-          full_name: 'Maya Chen',
-          role: 'curator'
-        },
-        tags: ['basquiat', 'skull', 'analysis', 'african-art']
-      },
-      {
-        id: '2',
-        content: 'Walking through Brooklyn today, I couldn\'t help but think about Jean-Michel\'s early days here. The energy, the raw creativity, the way art explodes from every corner. Street art isn\'t just decoration - it\'s revolution made visible.',
-        author_id: 'user2',
-        created_at: new Date(Date.now() - 7200000).toISOString(),
-        like_count: 15,
-        comment_count: 4,
-        is_liked: true,
-        author: {
-          id: 'user2',
-          username: 'brooklyn_art',
-          full_name: 'Alex Rodriguez',
-          role: 'member'
-        },
-        tags: ['brooklyn', 'street-art', 'inspiration']
-      },
-      {
-        id: '3',
-        content: 'New exhibition opening next week: "Words as Weapons: Text in Basquiat\'s Work." Looking at how he used language not just as art but as activism. His words carry the weight of history and the promise of change. Who else is planning to attend? 📝🎨',
-        author_id: 'user3',
-        created_at: new Date(Date.now() - 14400000).toISOString(),
-        like_count: 31,
-        comment_count: 12,
-        is_liked: false,
-        author: {
-          id: 'user3',
-          username: 'dr_williams',
-          full_name: 'Dr. Sarah Williams',
-          role: 'curator'
-        },
-        tags: ['exhibition', 'text-art', 'activism']
-      },
-      {
-        id: '4',
-        content: 'Teaching my kids about Basquiat today. They were amazed that someone could make art that\'s both beautiful AND tells important stories about justice and identity. Art education starts early! 👨‍👩‍👧‍👦',
-        author_id: 'user4',
-        created_at: new Date(Date.now() - 86400000).toISOString(),
-        like_count: 42,
-        comment_count: 9,
-        is_liked: true,
-        author: {
-          id: 'user4',
-          username: 'parentartist',
-          full_name: 'Marcus Johnson',
-          role: 'member'
-        },
-        tags: ['education', 'family', 'justice']
-      },
-      {
-        id: '5',
-        content: 'Reminder: The crown motif in Basquiat\'s work isn\'t about vanity or ego. It\'s about reclaiming power, dignity, and self-worth in a world that often denies these things to Black bodies. Every crown is a statement of inherent royalty. 👑',
-        author_id: 'user5',
-        created_at: new Date(Date.now() - 172800000).toISOString(),
-        like_count: 67,
-        comment_count: 18,
-        is_liked: false,
-        author: {
-          id: 'user5',
-          username: 'cultural_critic',
-          full_name: 'Dr. Amara Washington',
-          role: 'curator'
-        },
-        tags: ['crown', 'power', 'identity', 'symbolism']
-      }
-    ];
-
-    setPosts(mockPosts);
-  };
+    if (user) {
+      loadFeed();
+    }
+  }, [user]);
 
   const handleCreatePost = async () => {
     if (!newPost.trim() || !user) return;
 
     setIsPosting(true);
     try {
-      const post: Post = {
-        id: Date.now().toString(),
-        content: newPost.trim(),
-        author_id: user.id,
-        created_at: new Date().toISOString(),
-        like_count: 0,
-        comment_count: 0,
-        is_liked: false,
-        author: {
-          id: user.id,
-          username: user.email?.split('@')[0] || 'user',
-          full_name: user.user_metadata?.full_name || 'User',
-          role: 'member'
-        }
-      };
-
-      setPosts(prev => [post, ...prev]);
+      const response = await api.post('/posts', { content: newPost.trim() });
+      setPosts(prev => [response.data.post, ...prev]);
       setNewPost('');
     } catch (error) {
       console.error('Error creating post:', error);
@@ -164,18 +79,23 @@ export default function FeedPage() {
     }
   };
 
-  const handleLike = (postId: string) => {
-    setPosts(prev =>
-      prev.map(post =>
-        post.id === postId
-          ? {
-              ...post,
-              is_liked: !post.is_liked,
-              like_count: post.is_liked ? post.like_count - 1 : post.like_count + 1
-            }
-          : post
-      )
-    );
+  const handleLike = async (postId: string) => {
+    try {
+      const response = await api.post(`/posts/${postId}/like`);
+      setPosts(prev =>
+        prev.map(post =>
+          post.id === postId
+            ? {
+                ...post,
+                user_liked: response.data.liked,
+                likes_count: response.data.liked ? post.likes_count + 1 : post.likes_count - 1
+              }
+            : post
+        )
+      );
+    } catch (error) {
+      console.error('Error liking post:', error);
+    }
   };
 
   const getRoleBadgeColor = (role: string) => {
@@ -261,18 +181,17 @@ export default function FeedPage() {
               <div className="flex items-center gap-3 mb-4">
                 <Avatar className="w-12 h-12 border-2 border-black">
                   <div className="w-full h-full bg-basquiat-blue flex items-center justify-center text-white font-bold">
-                    {post.author.full_name.charAt(0)}
+                    {post.author.display_name.charAt(0)}
                   </div>
                 </Avatar>
                 
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-black">{post.author.full_name}</h3>
-                    <Badge className={`${getRoleBadgeColor(post.author.role)} text-xs px-2 py-1`}>
-                      {post.author.role}
+                    <h3 className="font-bold text-black">{post.author.display_name}</h3>
+                    <Badge className={`${getRoleBadgeColor(post.author.house.name)} text-xs px-2 py-1`}>
+                      {post.author.house.name}
                     </Badge>
                   </div>
-                  <p className="text-sm text-gray-600">@{post.author.username}</p>
                   <p className="text-xs text-gray-500">{formatTime(post.created_at)}</p>
                 </div>
               </div>
@@ -303,16 +222,16 @@ export default function FeedPage() {
                 <Button
                   onClick={() => handleLike(post.id)}
                   className={`text-sm px-4 py-2 ${
-                    post.is_liked 
+                    post.user_liked 
                       ? 'bg-basquiat-red text-white' 
                       : 'bg-white text-black border-2 border-black hover:bg-basquiat-red hover:text-white'
                   }`}
                 >
-                  ❤️ {post.like_count}
+                  ❤️ {post.likes_count}
                 </Button>
                 
                 <Button className="text-sm px-4 py-2 bg-white text-black border-2 border-black hover:bg-basquiat-blue hover:text-white">
-                  💭 {post.comment_count}
+                  💭 {post.comments_count}
                 </Button>
                 
                 <Button className="text-sm px-4 py-2 bg-white text-black border-2 border-black hover:bg-basquiat-green hover:text-white">
